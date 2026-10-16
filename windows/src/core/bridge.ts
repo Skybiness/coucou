@@ -7,6 +7,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { LineHint } from "./diff";
 import type { EditorId } from "./editors";
+import type { Dashboard, Sent, SnippetLine } from "./gitlab-panel";
 import type { Settings } from "./state";
 import type { RecapHistory, RecapPrefs } from "../recap/summary";
 import type { SpotifyState } from "./spotify";
@@ -397,6 +398,23 @@ export const Bridge = {
   refreshIntegration: (id: string) => call<void>("refresh_integration", { id }),
   /** The GitHub card is on screen: refetch that part if it is stale. */
   githubRefresh: (section: "pulse" | "activity") => call<void>("github_refresh", { section }),
+  /** The GitLab card is on screen: refetch that part if it is stale. */
+  gitlabRefresh: (section: "pulse" | "activity") => call<void>("gitlab_refresh", { section }),
+  /** The GitLab panel (src/gitlab-panel): opened by the card's ⤢ button. */
+  gitlabPanelToggle: () => call<void>("gitlab_panel_toggle"),
+  gitlabPanelClose: () => call<void>("gitlab_panel_close"),
+  gitlabPanelIsOpen: () => call<boolean>("gitlab_panel_is_open"),
+  gitlabPanelIsExpanded: () => call<boolean>("gitlab_panel_is_expanded"),
+  /** Unfolds the panel into its card (true) or folds it into the slim bar (false). */
+  gitlabPanelMode: (expanded: boolean) => call<void>("gitlab_panel_mode", { expanded }),
+  gitlabPanelResize: (height: number) => call<void>("gitlab_panel_resize", { height }),
+  gitlabDashboard: () => call<Dashboard>("gitlab_dashboard"),
+  gitlabReply: (projectId: number, mrIid: number, discussion: string, body: string) =>
+    call<Sent>("gitlab_reply", { projectId, mrIid, discussion, body }),
+  gitlabResolve: (projectId: number, mrIid: number, discussion: string, resolved: boolean) =>
+    call<Sent>("gitlab_resolve", { projectId, mrIid, discussion, resolved }),
+  gitlabSnippet: (projectId: number, file: string, sha: string, line: number) =>
+    call<SnippetLine[]>("gitlab_snippet", { projectId, file, sha, line }),
   /** Opens the configured n8n instance in the browser. */
   openN8n: () => call<void>("open_n8n"),
 

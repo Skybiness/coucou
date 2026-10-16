@@ -355,6 +355,54 @@ minute while a CI is running, and as soon as you open the card on data older
 than a minute; contributions every 30 minutes. Nothing is fetched while the pill
 is off or Coucou is paused.
 
+## GitLab
+
+Next to GitHub, not instead of it: switch either pill on in **Settings… →
+Integrations**, or both. With a personal access token that has the `read_api`
+scope in **GitLab**, the pill shows the same card with GitLab's words:
+
+- **My MRs**: your open merge requests and the status of their pipeline.
+- **To review**: the merge requests where you are a reviewer or the assignee.
+- **Default branch pipelines**: the latest pipeline on the default branch of your
+  10 most recently active projects.
+- Your stars and the **last 7 days of activity** in the card header; click them
+  for the past 23 weeks. GitLab has no contribution calendar in its API, so the
+  grid counts your own events (pushes, merge requests, comments…) per day, up to
+  the last 1000 of the year: close to GitLab's calendar, not identical to it.
+
+**The merge request panel.** The panel button in the GitLab card (a small window with a side panel) opens a small
+window next to the island: a slim version of GitLab's merge request dashboard,
+across every project your token can see. Four sections that fold, each with its
+count: **Comments waiting** (threads left open whose last message is not yours —
+an answer to a comment you wrote, or a comment on your merge request), **To
+review**, **My MRs** (with approvals and open threads) and **Approved** (open
+merge requests you approved). A badge such as `+2` tells what is new since you
+last opened a section, and *Comments* and *To review* take a colour while
+something waits for you. Messages from automated accounts (dependabot, project bots…) are left out, and
+so is SonarQube's "Quality Gate" report, recognised by its text since it often
+comes under an ordinary account: the panel is for what people wrote, and a
+thread that only holds such messages is not shown. Open a thread to read it with the code it is about,
+**answer it**, **resolve it** or open it again; a button opens the merge request
+in GitLab, where you approve. Replying needs the `api` scope: raise your token's
+rights (the same token) — with `read_api` alone everything is shown and only the
+reply is off. Like the island, it is not moved by hand: it lies flat against the right edge
+of the screen the island lives on (Settings → Island lives on), a little below
+the top, with its left corners round. It opens as a slim bar — the GitLab logo
+and one tile per section, each with its `+N` and a glow while something waits.
+Hover the bar (or click a tile, which opens that section) and it unfolds
+leftwards; once the pointer has been away for the island's auto-close delay, it
+folds again — never while you are writing a reply. A new comment makes its tile
+pulse without unfolding anything. It stays open when the island hides.
+A new comment waiting badges the GitLab pill and plays the question
+sound. The panel reads GitLab every 5 minutes, every minute while it is open and
+right after you answer.
+
+The URL of your instance goes in the same place, for a self-hosted GitLab; leave
+it empty for gitlab.com. It has to be `https://` (`http://` is only accepted for
+`localhost`), and links only open on that host. The badge, the sound and the
+refresh rhythm are GitHub's. The token and the URL are stored like the other
+keys, in the Credential Manager or the Secret Service.
+
 ## Build it yourself
 
 You need [Rust](https://rustup.rs), [Node 22.18+](https://nodejs.org) (`windows/.nvmrc` names the version the CI uses: `nvm use`), and the

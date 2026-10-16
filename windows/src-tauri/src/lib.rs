@@ -11,6 +11,9 @@ mod editor;
 mod files;
 mod flow;
 mod github;
+mod gitlab;
+mod gitlab_dash;
+mod gitlab_panel;
 mod hooks;
 mod i18n;
 mod identity;
@@ -128,6 +131,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings.screen, collapsed);
+        gitlab_panel::screen_changed(&app);
     }
     integrations::settings_saved(&app, &settings.active_integrations);
     spotify::sync(&app, &settings.active_integrations);
@@ -196,6 +200,7 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
     let pref = shared.settings.lock().unwrap().screen.clone();
     let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
     island::apply_geometry(&app, &pref, collapsed);
+    gitlab_panel::screen_changed(&app);
 }
 
 /// The panel is laid out in CSS px against the window's own scale. If the webview
@@ -705,14 +710,15 @@ fn secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> 
     if key == local_chat::CUSTOM_KEY {
         return Err("use local_set_key".into());
     }
-    let before = (key == "github-token").then(|| secrets::get(&key));
+    let watched = matches!(key.as_str(), "github-token" | "gitlab-token" | "gitlab-url");
+    let before = watched.then(|| secrets::get(&key));
     secrets::set(&key, &value)?;
     if key == claude::KEY {
         voice::sync(&app);
     }
     if let Some(before) = before {
         if secrets::get(&key) != before {
-            integrations::github_token_changed(&app);
+            credentials_changed(&app, &key);
         }
     }
     Ok(())
@@ -720,15 +726,25 @@ fn secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> 
 
 #[tauri::command]
 fn secret_clear(app: AppHandle, key: String) -> Result<(), String> {
-    let had = key == "github-token" && secrets::present(&key);
+    let had = matches!(key.as_str(), "github-token" | "gitlab-token" | "gitlab-url") && secrets::present(&key);
     secrets::clear(&key)?;
     if key == claude::KEY {
         voice::sync(&app);
     }
     if had {
-        integrations::github_token_changed(&app);
+        credentials_changed(&app, &key);
     }
     Ok(())
+}
+
+/// A GitHub or GitLab credential changed: that integration forgets what the
+/// old one fetched and starts again.
+fn credentials_changed(app: &AppHandle, key: &str) {
+    if key == "github-token" {
+        integrations::github_token_changed(app);
+    } else {
+        integrations::gitlab_credentials_changed(app);
+    }
 }
 
 /// Opens the configured n8n instance — the URL lives in the Credential Manager.
@@ -750,6 +766,12 @@ async fn refresh_integration(app: AppHandle, id: String) {
 #[tauri::command]
 fn github_refresh(section: String) {
     integrations::github_refresh_if_stale(&section);
+}
+
+/// The GitLab card was opened: same as `github_refresh`.
+#[tauri::command]
+fn gitlab_refresh(section: String) {
+    integrations::gitlab_refresh_if_stale(&section);
 }
 
 /// Lets the island write to the same log as the Rust side.
@@ -944,6 +966,17 @@ pub fn run() {
             secret_clear,
             refresh_integration,
             github_refresh,
+            gitlab_refresh,
+            gitlab_panel::gitlab_panel_toggle,
+            gitlab_panel::gitlab_panel_close,
+            gitlab_panel::gitlab_panel_is_open,
+            gitlab_panel::gitlab_panel_is_expanded,
+            gitlab_panel::gitlab_panel_mode,
+            gitlab_panel::gitlab_panel_resize,
+            gitlab_panel::gitlab_dashboard,
+            gitlab_panel::gitlab_reply,
+            gitlab_panel::gitlab_resolve,
+            gitlab_panel::gitlab_snippet,
             open_n8n,
             open_settings_window,
             set_paused,
@@ -1047,6 +1080,7 @@ pub fn run() {
             // Same rule for Mochi's desktop window and the dictation pill.
             desktop::setup(&handle);
             flow::setup(&handle);
+            gitlab_panel::setup(&handle);
             notes::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
@@ -1077,6 +1111,7 @@ pub fn run() {
             pipe::start(handle.clone());
             phone_link::start_if_enabled(&handle);
             integrations::start(handle.clone());
+            gitlab_panel::start(handle.clone());
             spotify::sync(&handle, &loaded.active_integrations);
             shortcuts::apply(&handle, &loaded.shortcuts);
             if loaded.autostart {
