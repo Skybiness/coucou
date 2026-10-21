@@ -5,7 +5,7 @@
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
-import { State, type AgentTask } from "../core/state";
+import { State, type AgentTask, type WaitingSession } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -35,7 +35,8 @@ export interface ViewActions {
   /** Folds a waiting card to the compact island without answering it. */
   foldApproval(): void;
   setFocus(id: string): void;
-  openTerminal(): void;
+  /** "Open terminal": the focused pill's session, or the waiting one it is given. */
+  openTerminal(target?: WaitingSession): void;
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
@@ -96,6 +97,12 @@ function agentWho(task: AgentTask | null, label: string): HTMLElement {
   }
   row.append(h("span", { text: label }));
   return row;
+}
+
+/** "1/2" after the label of a card when several sessions are waiting, the oldest first. */
+function queuePosition(): string | null {
+  const total = State.waitingNow().length;
+  return total > 1 ? `1/${total}` : null;
 }
 
 function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElement {
@@ -599,13 +606,22 @@ function buildQuestion(actions: ViewActions): ViewHost {
 
       // A question that arrived as a notification has nothing to pick from.
       if (!questions) {
-        who.append(agentWho(State.focusTask, t("is asking a question")));
-        const task = State.focusTask;
-        title.textContent = (task && lastTextStep(task.steps)) ?? t("Claude needs an answer.");
-        if (rowKey !== "terminal") {
-          rowKey = "terminal";
+        const w = State.primaryWaiting();
+        const task = (w && State.tasks.find((x) => x.id === w.pillId)) || State.focusTask;
+        who.append(agentWho(task, t("is asking a question")));
+        const position = queuePosition();
+        if (position) who.append(h("span", { class: "sub", text: position }));
+        title.textContent = w?.text || (task && lastTextStep(task.steps)) || t("Claude needs an answer.");
+        // Rebuilt only when the session changes: a click must land on the button it pressed.
+        const key = `terminal:${w?.key ?? ""}`;
+        if (rowKey !== key) {
+          rowKey = key;
           clear(row);
-          row.append(h("div", { class: "sub", text: tl("Answer it in your terminal.") }));
+          row.append(
+            h("div", { class: "sub", text: tl("Answer it in your terminal.") }),
+            ...(w ? [btn(tl("Open terminal"), "primary", () => actions.openTerminal(w))] : []),
+            btn(tl("OK"), "secondary", () => actions.collapse()),
+          );
         }
         return;
       }
@@ -691,21 +707,24 @@ function buildError(actions: ViewActions): ViewHost {
 function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title one-line" });
-  const open = btn(tl("Open terminal"), "primary", () => actions.openTerminal());
-  const row = h("div", { class: "actions" },
-    open,
-    btn(tl("OK"), "secondary", () => actions.collapse()),
-  );
+  // The session the card is about: the one that finished last, not the pill in front.
+  let current: WaitingSession | null = null;
+  const open = btn(tl("Open terminal"), "primary", () => actions.openTerminal(current ?? undefined));
+  const ok = btn(tl("OK"), "secondary", () => actions.collapse());
+  const row = h("div", { class: "actions" }, open, ok);
   const el = h("div", { class: "view" }, card("green", stack(116, 16, who, title, row)));
   return {
     el,
     sync() {
       clear(who);
-      const agent = State.focusTask?.source === "agent";
-      who.append(agentWho(State.focusTask, agent ? t("finished") : t("Claude Code finished")));
+      current = State.primaryWaiting();
+      const task = (current && State.tasks.find((x) => x.id === current!.pillId)) || State.focusTask;
+      const agent = task?.source === "agent";
+      who.append(agentWho(task, current?.kind === "question" ? t("is asking a question") : agent ? t("finished") : t("Claude Code finished")));
+      const position = queuePosition();
+      if (position) who.append(h("span", { class: "sub", text: position }));
       // The final message, else the last step that is not a diff (FinishedView).
-      const task = State.focusTask;
-      title.textContent = task?.finalLine || (task && lastTextStep(task.steps)) || t("Session finished");
+      title.textContent = current?.text || task?.finalLine || (task && lastTextStep(task.steps)) || t("Session finished");
       // Sessions from the Claude desktop app live there, not in a terminal.
       const label = task?.id === "agent_claude-desktop" ? t("Open Claude") : t("Open terminal");
       const span = open.firstElementChild as HTMLElement;

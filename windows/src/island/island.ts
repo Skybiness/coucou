@@ -159,7 +159,7 @@ export class Island {
     const actions: ViewActions = {
       setView: (v) => this.setView(v),
       cancelDrop: () => this.discardDrop(),
-      collapse: () => this.collapse(),
+      collapse: () => this.dismissWaiting(),
       foldApproval: () => this.foldApproval(),
       setFocus: (id) => {
         State.setFocus(id);
@@ -169,7 +169,16 @@ export class Island {
         const req = State.pendingApproval;
         if (req?.pillId === id) this.setView(req.questions ? "question" : "approval");
       },
-      openTerminal: () => {
+      openTerminal: (target) => {
+        // A waiting session names its own window; it is no longer waiting once opened.
+        if (target) {
+          void Bridge.openSession(target.sessionId, target.cwd);
+          State.clearWaiting(target.key);
+          const next = State.primaryWaiting();
+          if (next) this.setView(next.kind === "question" ? "question" : "finished");
+          else this.collapse();
+          return;
+        }
         const task = State.focusTask;
         // Sessions from the Claude desktop app live there, not in a terminal.
         if (task?.id === CLAUDE_DESKTOP_ID) void Bridge.openClaudeDesktop();
@@ -406,6 +415,24 @@ export class Island {
     State.lastActivity = performance.now();
     this.animateGeometry(!grew);
     State.notify();
+  }
+
+  /**
+   * "OK" on a card: the session it was about stops waiting. Another waiting
+   * session comes up in its place; the island folds when none is left.
+   */
+  private dismissWaiting() {
+    const onCard = State.view === "finished" || State.view === "question";
+    const current = onCard && !State.pendingApproval ? State.primaryWaiting() : null;
+    if (current) {
+      State.clearWaiting(current.key);
+      const next = State.primaryWaiting();
+      if (next) {
+        this.setView(next.kind === "question" ? "question" : "finished");
+        return;
+      }
+    }
+    this.collapse();
   }
 
   collapse() {

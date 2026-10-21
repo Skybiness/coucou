@@ -43,6 +43,30 @@ export interface AgentTask {
   finalLine?: string | null;
 }
 
+const MAX_WAITING = 6;
+/** A session left waiting this long without a click is forgotten. */
+export const WAITING_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * A session that is waiting for you: its turn is over, or Claude Code asked
+ * something. They pile up, one per session, so a card for one never hides
+ * another, and "Open terminal" goes to the window of the one it names.
+ */
+export interface WaitingSession {
+  /** Claude Code's session, or the pill's id when the agent names none. */
+  key: string;
+  sessionId: string | null;
+  cwd: string | null;
+  pillId: string;
+  /** What the session is called: its project folder. */
+  name: string;
+  kind: "finished" | "question";
+  /** The final message, or what was asked; empty when there is none. */
+  text: string;
+  /** When it started waiting (Date.now()). */
+  at: number;
+}
+
 export interface ApprovalInfo {
   requestId: string;
   sessionId: string;
@@ -237,6 +261,8 @@ class AppState {
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
+  /** Sessions waiting for you, oldest first. */
+  waiting: WaitingSession[] = [];
   /** The pill that was in front when the card came up; it comes back after. */
   focusBeforeApproval: string | null = null;
 
@@ -341,6 +367,30 @@ class AppState {
       this.focusId = previous;
     }
     this.notify();
+  }
+
+  /** A session waits for you; asking again from the same one replaces its entry. */
+  markWaiting(w: Omit<WaitingSession, "at">) {
+    this.waiting = [...this.waitingNow().filter((x) => x.key !== w.key), { ...w, at: Date.now() }].slice(-MAX_WAITING);
+    this.notify();
+  }
+
+  /** The session is working again, or gone. */
+  clearWaiting(key: string) {
+    if (!this.waiting.some((x) => x.key === key)) return;
+    this.waiting = this.waiting.filter((x) => x.key !== key);
+    this.notify();
+  }
+
+  /** The sessions still waiting: those left unanswered for 10 minutes are forgotten. */
+  waitingNow(): WaitingSession[] {
+    const limit = Date.now() - WAITING_TTL_MS;
+    return this.waiting.filter((w) => w.at > limit);
+  }
+
+  /** The card is about the session that has waited longest; the others queue behind it. */
+  primaryWaiting(): WaitingSession | null {
+    return this.waitingNow()[0] ?? null;
   }
 
   updateTask(id: string, state: BotStateName) {
